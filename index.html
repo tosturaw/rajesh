@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hello World | Cyberpunk Terminal</title>
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: #000;
+            overflow: hidden; /* Prevent scrolling */
+            font-family: monospace;
+        }
+
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 1;
+        }
+        
+        /* Optional loading screen to hide setup */
+        #loader {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            color: #00ff00;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            font-size: 1.5rem;
+            transition: opacity 0.5s ease;
+        }
+    </style>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <div id="loader">Initializing System...</div>
+    <div id="canvas-container"></div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+        // Scene Setup
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        // Deep black background
+        scene.background = new THREE.Color(0x000000);
+        // Fog to fade elements into the distance
+        scene.fog = new THREE.FogExp2(0x000000, 0.02);
+
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 0, 15);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: false });
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        container.appendChild(renderer.domElement);
+
+        const renderScene = new RenderPass(scene, camera);
+        
+        // Resolution, strength, radius, threshold
+        const bloomPass = new UnrealBloomPass(
+            new THREE.Vector2(window.innerWidth, window.innerHeight),
+            1.5,
+            0.5,
+            0.1
+        );
+        bloomPass.strength = 1.2; // Intense neon glow
+        bloomPass.radius = 0.5;
+        bloomPass.threshold = 0; // Make everything green glow
+
+        const composer = new EffectComposer(renderer);
+        composer.addPass(renderScene);
+        composer.addPass(bloomPass);
+
+        // Grids (Floor and Ceiling)
+        const gridColor = 0x00ff00;
+        const gridHelperFloor = new THREE.GridHelper(200, 100, gridColor, gridColor);
+        gridHelperFloor.position.y = -8;
+        // Make lines a bit transparent to not overpower the screen
+        gridHelperFloor.material.transparent = true;
+        gridHelperFloor.material.opacity = 0.2;
+        scene.add(gridHelperFloor);
+
+        const gridHelperCeiling = new THREE.GridHelper(200, 100, gridColor, gridColor);
+        gridHelperCeiling.position.y = 8;
+        gridHelperCeiling.material.transparent = true;
+        gridHelperCeiling.material.opacity = 0.2;
+        scene.add(gridHelperCeiling);
+
+        // Particle System (Digital Rain / Data Nodes)
+        const particleCount = 1500;
+        const particlesGeometry = new THREE.BufferGeometry();
+        const particlesPositions = new Float32Array(particleCount * 3);
+
+        for (let i = 0; i < particleCount; i++) {
+            particlesPositions[i * 3] = (Math.random() - 0.5) * 100;     // x
+            particlesPositions[i * 3 + 1] = (Math.random() - 0.5) * 20;  // y
+            particlesPositions[i * 3 + 2] = (Math.random() - 0.5) * 100; // z
+        }
+
+        particlesGeometry.setAttribute('position', new THREE.BufferAttribute(particlesPositions, 3));
+        
+        const particlesMaterial = new THREE.PointsMaterial({
+            color: 0x00ff00,
+            size: 0.1,
+            transparent: true,
+            opacity: 0.8,
+            blending: THREE.AdditiveBlending
+        });
+
+        const particleSystem = new THREE.Points(particlesGeometry, particlesMaterial);
+        scene.add(particleSystem);
+
+        // Canvas Setup for Texture
+        const canvasWidth = 1024;
+        const canvasHeight = 512;
+        const ctxCanvas = document.createElement('canvas');
+        ctxCanvas.width = canvasWidth;
+        ctxCanvas.height = canvasHeight;
+        const ctx = ctxCanvas.getContext('2d');
+
+        const canvasTexture = new THREE.CanvasTexture(ctxCanvas);
+        // Keep pixels sharp for the terminal look
+        canvasTexture.minFilter = THREE.LinearFilter;
+        canvasTexture.magFilter = THREE.LinearFilter;
+
+        const planeGeometry = new THREE.PlaneGeometry(16, 8);
+        const planeMaterial = new THREE.MeshBasicMaterial({ 
+            map: canvasTexture, 
+            transparent: true,
+            opacity: 0.9,
+            side: THREE.DoubleSide
+        });
+        const terminalMesh = new THREE.Mesh(planeGeometry, planeMaterial);
+        terminalMesh.position.set(0, 0, 0);
+        scene.add(terminalMesh);
+
+        // Typing Animation Variables
+        const terminalLines = [
+            "admin@system:~$ boot_system...",
+            "admin@system:~$ loading core modules... [DONE]",
+            "admin@system:~$ establishing secure connection... [DONE]",
+            "admin@system:~$ loading assets... OK",
+            "",
+            "> Hello World!"
+        ];
+        
+        let currentLineIdx = 0;
+        let currentCharIdx = 0;
+        let displayedLines = [];
+        let isTyping = true;
+        let lastBlinkTime = 0;
+        let showCursor = true;
+
+        // Draw function for the 2D Canvas
+        function drawTerminal() {
+            // Clear background (slightly transparent dark green/black)
+            ctx.fillStyle = 'rgba(0, 10, 0, 0.8)';
+            ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+            // Draw border
+            ctx.strokeStyle = '#00ff00';
+            ctx.lineWidth = 4;
+            ctx.strokeRect(2, 2, canvasWidth - 4, canvasHeight - 4);
+
+            // Text configuration
+            ctx.font = 'bold 32px "Courier New", Courier, monospace';
+            ctx.fillStyle = '#00ff00';
+            ctx.textBaseline = 'top';
+
+            const startX = 40;
+            const startY = 40;
+            const lineHeight = 45;
+
+            // Draw previously completed lines
+            for (let i = 0; i < displayedLines.length; i++) {
+                ctx.fillText(displayedLines[i], startX, startY + (i * lineHeight));
+            }
+
+            // Draw current typing line
+            if (isTyping && currentLineIdx < terminalLines.length) {
+                const currentStr = terminalLines[currentLineIdx].substring(0, currentCharIdx);
+                const currentY = startY + (displayedLines.length * lineHeight);
+                ctx.fillText(currentStr, startX, currentY);
+
+                // Draw blinking cursor
+                const textWidth = ctx.measureText(currentStr).width;
+                if (showCursor) {
+                    ctx.fillRect(startX + textWidth + 5, currentY, 18, 32);
+                }
+            } else if (!isTyping) {
+                // Done typing, just blink cursor at the end of last line
+                const lastLine = displayedLines[displayedLines.length - 1] || "";
+                const currentY = startY + ((displayedLines.length - 1) * lineHeight);
+                const textWidth = ctx.measureText(lastLine).width;
+                if (showCursor) {
+                    ctx.fillRect(startX + textWidth + 5, currentY, 18, 32);
+                }
+            }
+
+            // Update texture in WebGL
+            canvasTexture.needsUpdate = true;
+        }
+
+        // Interval for typing effect
+        const typeInterval = setInterval(() => {
+            if (!isTyping) return;
+
+            if (currentLineIdx < terminalLines.length) {
+                const targetStr = terminalLines[currentLineIdx];
+                
+                if (currentCharIdx < targetStr.length) {
+                    currentCharIdx++;
+                } else {
+                    // Line finished
+                    displayedLines.push(targetStr);
+                    currentLineIdx++;
+                    currentCharIdx = 0;
+                    
+                    // Add a slight pause between commands
+                    if (currentLineIdx < terminalLines.length && targetStr !== "") {
+                        isTyping = false;
+                        setTimeout(() => { isTyping = true; }, 400);
+                    }
+                }
+            } else {
+                isTyping = false;
+                clearInterval(typeInterval);
+            }
+        }, 50); // Typing speed
+
+        // Mouse interaction for parallax
+        let mouseX = 0;
+        let mouseY = 0;
+        let targetX = 0;
+        let targetY = 0;
+
+        window.addEventListener('mousemove', (event) => {
+            mouseX = (event.clientX / window.innerWidth) * 2 - 1;
+            mouseY = -(event.clientY / window.innerHeight) * 2 + 1;
+        });
+
+        // Window resize handler
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Hide loader once setup is done
+        document.getElementById('loader').style.opacity = '0';
+        setTimeout(() => document.getElementById('loader').style.display = 'none', 500);
+
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const time = clock.getElapsedTime();
+
+            // Animate Particles (Digital Rain moving towards camera)
+            const positions = particleSystem.geometry.attributes.position.array;
+            for (let i = 0; i < particleCount; i++) {
+                // Move z forward
+                positions[i * 3 + 2] += 0.2;
+                
+                // If past camera, reset far back
+                if (positions[i * 3 + 2] > 20) {
+                    positions[i * 3 + 2] = -80;
+                }
+            }
+            particleSystem.geometry.attributes.position.needsUpdate = true;
+
+            // Parallax Effect (Smooth Lerp)
+            targetX = mouseX * 0.15;
+            targetY = mouseY * 0.15;
+
+            // Tilt terminal
+            terminalMesh.rotation.y += (targetX - terminalMesh.rotation.y) * 0.05;
+            terminalMesh.rotation.x += (-targetY - terminalMesh.rotation.x) * 0.05;
+            
+            // Shift camera slightly
+            camera.position.x += (mouseX * 1.5 - camera.position.x) * 0.02;
+            camera.position.y += (mouseY * 1.5 - camera.position.y) * 0.02;
+            camera.lookAt(scene.position);
+
+            // Handle cursor blink
+            if (Date.now() - lastBlinkTime > 500) {
+                showCursor = !showCursor;
+                lastBlinkTime = Date.now();
+            }
+
+            // Redraw canvas text (only necessary for blinking or typing)
+            drawTerminal();
+
+            // Render scene with bloom
+            composer.render();
+        }
+
+        animate();
+    </script>
+</body>
+</html>
